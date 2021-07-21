@@ -12,7 +12,7 @@
 <meta name="author" content="James Ashmore" />
 
 
-<title>Feature selection</title>
+<title>Doublet detection</title>
 
 <script src="site_libs/header-attrs-2.9/header-attrs.js"></script>
 <script src="site_libs/jquery-1.11.3/jquery.min.js"></script>
@@ -397,7 +397,7 @@ div.tocify {
 
 
 
-<h1 class="title toc-ignore">Feature selection</h1>
+<h1 class="title toc-ignore">Doublet detection</h1>
 <h4 class="author">James Ashmore</h4>
 <h4 class="date">21 July, 2021</h4>
 
@@ -563,7 +563,7 @@ Note that any generated files, e.g. HTML, png, CSS, etc., are not included in t
 <div id="versions" class="tab-pane fade">
 
 <p>
-These are the previous versions of the repository in which changes were made to the R Markdown (<code>analysis/03-feature-selection.Rmd</code>) and HTML (<code>docs/03-feature-selection.html</code>) files. If you’ve configured a remote Git repository (see <code>?wflow_git_remote</code>), click on the hyperlinks in the table below to view the files as they were in that past version.
+These are the previous versions of the repository in which changes were made to the R Markdown (<code>analysis/06-doublet-detection.Rmd</code>) and HTML (<code>docs/06-doublet-detection.html</code>) files. If you’ve configured a remote Git repository (see <code>?wflow_git_remote</code>), click on the hyperlinks in the table below to view the files as they were in that past version.
 </p>
 <div class="table-responsive">
 <table class="table table-condensed table-hover">
@@ -589,27 +589,10 @@ Message
 <tbody>
 <tr>
 <td>
-html
-</td>
-<td>
-<a href="https://rawcdn.githack.com/jma1991/HT_KDR_MIX_C/7c397c86f0e052371d1245bdb653cf5aee0ef88b/docs/03-feature-selection.html" target="_blank">7c397c8</a>
-</td>
-<td>
-James Ashmore
-</td>
-<td>
-2021-07-21
-</td>
-<td>
-Build
-</td>
-</tr>
-<tr>
-<td>
 Rmd
 </td>
 <td>
-<a href="https://github.com/jma1991/HT_KDR_MIX_C/blob/10e967b5d204398ad81d7e54a14a5065dfd1e07a/analysis/03-feature-selection.Rmd" target="_blank">10e967b</a>
+<a href="https://github.com/jma1991/HT_KDR_MIX_C/blob/8c74cdeeb25461240d26019844edc945fc483df7/analysis/06-doublet-detection.Rmd" target="_blank">8c74cde</a>
 </td>
 <td>
 James Ashmore
@@ -628,377 +611,123 @@ Build
 </div>
 </div>
 </div>
-<div id="introduction" class="section level2">
-<h2>Introduction</h2>
-<p>In this document we are going to select features for downstream processing.</p>
-</div>
 <div id="setup" class="section level2">
 <h2>Setup</h2>
 <p>Set chunk options:</p>
 <pre class="r"><code>knitr::opts_chunk$set(
   autodep    = TRUE,
   cache      = TRUE,
-  cache.path = &quot;cache/03-feature-selection.Rmd/&quot;,
+  cache.path = &quot;cache/06-doublet-detection.Rmd/&quot;,
   dev        = &quot;png&quot;,
   error      = FALSE,
   message    = FALSE,
   warning    = FALSE
 )</code></pre>
-<p>Load Bioconductor packages:</p>
-<pre class="r"><code>library(BiocSingular)
-library(org.Mm.eg.db)
-library(scater)
+<p>Load required packages:</p>
+<pre class="r"><code>library(scater)
 library(scran)
-library(msigdbr)</code></pre>
-<p>Load CRAN packages:</p>
-<pre class="r"><code>library(eulerr)
-library(pheatmap)
-library(scales)</code></pre>
+library(scDblFinder)</code></pre>
 <p>Read experiment data:</p>
-<pre class="r"><code>sce &lt;- readRDS(&quot;output/02-normalization.rds&quot;)</code></pre>
+<pre class="r"><code>sce &lt;- readRDS(&quot;output/05-clustering.rds&quot;)</code></pre>
 </div>
-<div id="blacklist" class="section level2">
-<h2>Blacklist</h2>
-<p>Create a blacklist of genes to ignore for feature selection:</p>
-<pre class="r"><code>rowData(sce)$blacklist &lt;- FALSE</code></pre>
-<p>Append Xist gene to blacklist:</p>
-<pre class="r"><code>idx &lt;- which(rowData(sce)$gene_id == &quot;ENSMUSG00000086503&quot;)
+<div id="detection" class="section level2">
+<h2>Detection</h2>
+<div id="by-cluster" class="section level3 tabset">
+<h3 class="tabset">By cluster</h3>
+<p>Check there are at least three clusters to detect doublet clusters:</p>
+<pre class="r"><code>num &lt;- nlevels(sce$cluster)
 
-rowData(sce)$blacklist[idx] &lt;- TRUE</code></pre>
-<p>Append Y chromosome genes to blacklist:</p>
-<pre class="r"><code>idx &lt;- which(seqnames(sce) == &quot;Y&quot;)
+run &lt;- ifelse(num &lt; 3, FALSE, TRUE)</code></pre>
+<p>Identify potential clusters of doublet cells based on intermediate expression profiles:</p>
+<pre class="r"><code>set.seed(0100001011)
 
-rowData(sce)$blacklist[idx] &lt;- TRUE</code></pre>
-<p>Append MT chromosome genes to blacklist:</p>
-<pre class="r"><code>idx &lt;- which(seqnames(sce) == &quot;MT&quot;)
+dbl &lt;- findDoubletClusters(sce, sce$cluster)</code></pre>
+<p>Annotate clusters that have unusually low number of unique genes:</p>
+<pre class="r"><code>out &lt;- isOutlier(dbl$num.de, type = &quot;lower&quot;, log = TRUE)
 
-rowData(sce)$blacklist[idx] &lt;- TRUE</code></pre>
-<p>Append cell-cycle genes to blacklist:</p>
-<pre class="r"><code>org &lt;- select(org.Mm.eg.db, keys = &quot;GO:0007049&quot;, keytype = &quot;GOALL&quot;, column = &quot;ENSEMBL&quot;)
+ids &lt;- rownames(dbl)[out]
 
-idx &lt;- which(rowData(sce)$gene_id %in% org$ENSEMBL)
-
-rowData(sce)$blacklist[idx] &lt;- TRUE</code></pre>
-<p>Append ribosomal genes to blacklist:</p>
-<pre class="r"><code>sig &lt;- msigdbr(species = &quot;Mus musculus&quot;, category = &quot;C2&quot;)
-
-sig &lt;- subset(sig, gs_name == &quot;KEGG_RIBOSOME&quot;)
-
-org &lt;- select(org.Mm.eg.db, keys = sig$gene_symbol, keytype = &quot;SYMBOL&quot;, column = &quot;ENSEMBL&quot;)
-
-idx &lt;- which(rowData(sce)$gene_id %in% org$ENSEMBL)
-
-rowData(sce)$blacklist[idx] &lt;- TRUE</code></pre>
-</div>
-<div id="measuring-variation" class="section level2 tabset">
-<h2 class="tabset">Measuring variation</h2>
-<div id="modelgenevar" class="section level3">
-<h3>modelGeneVar</h3>
-<p>Model the per-gene variance</p>
-<pre class="r"><code>dec &lt;- modelGeneVar(sce)
-
-dat &lt;- as.data.frame(dec)
-  
-ggplot(dat, aes(mean, total)) +
-  geom_point(colour = &quot;grey&quot;) +
-  geom_line(aes(y = tech)) +
-  labs(x = &quot;Mean of log-expression&quot;, y = &quot;Variance of log-expression&quot;) +
-  theme_minimal()</code></pre>
-<p><img src="figure/03-feature-selection.Rmd/unnamed-chunk-11-1.png" width="672" style="display: block; margin: auto;" /></p>
-<pre class="r"><code>metadata(sce)$modelGeneVar &lt;- dec</code></pre>
-</div>
-<div id="modelgenecv2" class="section level3">
-<h3>modelGeneCV2</h3>
-<p>Model the per-gene CV2:</p>
-<pre class="r"><code>dec &lt;- modelGeneCV2(sce)
-
-dat &lt;- as.data.frame(dec)
-  
-ggplot(dat, aes(mean, total)) +
-  geom_point(colour = &quot;grey&quot;) +
-  geom_line(aes(y = trend)) + 
-  scale_x_log10() + 
-  scale_y_log10() + 
-  labs(x = &quot;Mean of log-expression&quot;, y = &quot;Variance of log-expression&quot;) +
-  theme_minimal()</code></pre>
-<p><img src="figure/03-feature-selection.Rmd/unnamed-chunk-12-1.png" width="672" style="display: block; margin: auto;" /></p>
-<pre class="r"><code>metadata(sce)$modelGeneCV2 &lt;- dec</code></pre>
-</div>
-<div id="modelgenevarwithspikes" class="section level3">
-<h3>modelGeneVarWithSpikes</h3>
-<p>Model the per-gene variance with spike-ins:</p>
-<pre class="r"><code>dec &lt;- modelGeneVarWithSpikes(sce, &quot;ERCC&quot;)
-
-alt &lt;- metadata(dec)
-
-df1 &lt;- as.data.frame(dec)
-
-df2 &lt;- data.frame(mean = alt$mean, total = alt$var)
-  
-ggplot(df1, aes(mean, total)) +
-  geom_point(colour = &quot;grey&quot;) +
-  geom_line(aes(mean, tech)) +
-  geom_point(data = df2, aes(mean, total), colour = &quot;red&quot;) +
-  labs(x = &quot;Mean of log-expression&quot;, y = &quot;Variance of log-expression&quot;) +
-  theme_minimal()</code></pre>
-<p><img src="figure/03-feature-selection.Rmd/unnamed-chunk-13-1.png" width="672" style="display: block; margin: auto;" /></p>
-<pre class="r"><code>metadata(sce)$modelGeneVarWithSpikes &lt;- dec</code></pre>
-</div>
-<div id="modelgenecv2withspikes" class="section level3">
-<h3>modelGeneCV2WithSpikes</h3>
-<p>Model the per-gene CV2 with spike-ins:</p>
-<pre class="r"><code>dec &lt;- modelGeneCV2WithSpikes(sce, &quot;ERCC&quot;)
-
-alt &lt;- metadata(dec)
-
-df1 &lt;- as.data.frame(dec)
-
-df2 &lt;- data.frame(mean = alt$mean, cv2 = alt$cv2)
-  
-ggplot(df1, aes(mean, total)) +
-  geom_point(colour = &quot;grey&quot;) +
-  geom_line(aes(mean, trend)) +
-  geom_point(data = df2, aes(mean, cv2), colour = &quot;red&quot;) +
-  scale_x_log10() + 
-  scale_y_log10() + 
-  labs(x = &quot;Mean of log-expression&quot;, y = &quot;Variance of log-expression&quot;) +
-  theme_minimal()</code></pre>
-<p><img src="figure/03-feature-selection.Rmd/unnamed-chunk-14-1.png" width="672" style="display: block; margin: auto;" /></p>
-<pre class="r"><code>metadata(sce)$modelGeneCV2WithSpikes &lt;- dec</code></pre>
-</div>
-<div id="modelgenevarbypoisson" class="section level3">
-<h3>modelGeneVarByPoisson</h3>
-<p>Model the per-gene variance with Poisson noise:</p>
-<pre class="r"><code>dec &lt;- modelGeneVarByPoisson(sce)
-
-dat &lt;- as.data.frame(dec)
-
-ggplot(dat, aes(mean, total)) +
-  geom_point(colour = &quot;grey&quot;) +
-  geom_line(aes(y = tech)) +
-  labs(x = &quot;Mean of log-expression&quot;, y = &quot;Variance of log-expression&quot;) +
-  theme_minimal()</code></pre>
-<p><img src="figure/03-feature-selection.Rmd/unnamed-chunk-15-1.png" width="672" style="display: block; margin: auto;" /></p>
-<pre class="r"><code>metadata(sce)$modelGeneVarByPoisson &lt;- dec</code></pre>
-</div>
-</div>
-<div id="selecting-genes" class="section level2 tabset">
-<h2 class="tabset">Selecting genes</h2>
-<div id="modelgenevar-1" class="section level3">
-<h3>modelGeneVar</h3>
-<p>Identify highly variable genes:</p>
-<pre class="r"><code>dec &lt;- metadata(sce)$modelGeneVar
-
-hvg &lt;- getTopHVGs(dec, var.field = &quot;bio&quot;, var.threshold = 0, fdr.field = &quot;FDR&quot;, fdr.threshold = 0.05)
-
-del &lt;- rownames(sce)[rowData(sce)$blacklist == TRUE]
-
-hvg &lt;- setdiff(hvg, del)
-
-sel &lt;- rownames(dec) %in% hvg
-
-metadata(sce)$modelGeneVar$hvg &lt;- sel</code></pre>
-<p>Plot expression of highly variable genes:</p>
-<pre class="r"><code>plotHeatmap(sce, hvg, center = TRUE, symmetric = TRUE, show_rownames = FALSE, show_colnames = FALSE)</code></pre>
-<p><img src="figure/03-feature-selection.Rmd/unnamed-chunk-17-1.png" width="672" style="display: block; margin: auto;" /></p>
-</div>
-<div id="modelgenecv2-1" class="section level3">
-<h3>modelGeneCV2</h3>
-<p>Identify highly variable genes:</p>
-<pre class="r"><code>dec &lt;- metadata(sce)$modelGeneCV2
-
-hvg &lt;- getTopHVGs(dec, var.field = &quot;ratio&quot;, var.threshold = 1, fdr.field = &quot;FDR&quot;, fdr.threshold = 0.05)
-
-del &lt;- rownames(sce)[rowData(sce)$blacklist == TRUE]
-
-hvg &lt;- setdiff(hvg, del)
-
-sel &lt;- rownames(dec) %in% hvg
-
-metadata(sce)$modelGeneCV2$hvg &lt;- sel</code></pre>
-<p>Plot expression of highly variable genes:</p>
-<pre class="r"><code>plotHeatmap(sce, hvg, center = TRUE, symmetric = TRUE, show_rownames = FALSE, show_colnames = FALSE)</code></pre>
-<p><img src="figure/03-feature-selection.Rmd/unnamed-chunk-19-1.png" width="672" style="display: block; margin: auto;" /></p>
-</div>
-<div id="modelgenevarwithspikes-1" class="section level3">
-<h3>modelGeneVarWithSpikes</h3>
-<p>Identify highly variable genes:</p>
-<pre class="r"><code>dec &lt;- metadata(sce)$modelGeneVarWithSpikes
-
-hvg &lt;- getTopHVGs(dec, var.field = &quot;bio&quot;, var.threshold = 0, fdr.field = &quot;FDR&quot;, fdr.threshold = 0.05)
-
-del &lt;- rownames(sce)[rowData(sce)$blacklist == TRUE]
-
-hvg &lt;- setdiff(hvg, del)
-
-sel &lt;- rownames(dec) %in% hvg
-
-metadata(sce)$modelGeneVarWithSpikes$hvg &lt;- sel</code></pre>
-<p>Plot expression of highly variable genes:</p>
-<pre class="r"><code>plotHeatmap(sce, hvg, center = TRUE, symmetric = TRUE, show_rownames = FALSE, show_colnames = FALSE)</code></pre>
-<p><img src="figure/03-feature-selection.Rmd/unnamed-chunk-21-1.png" width="672" style="display: block; margin: auto;" /></p>
-</div>
-<div id="modelgenecv2withspikes-1" class="section level3">
-<h3>modelGeneCV2WithSpikes</h3>
-<p>Identify highly variable genes:</p>
-<pre class="r"><code>dec &lt;- metadata(sce)$modelGeneCV2WithSpikes
-
-hvg &lt;- getTopHVGs(dec, var.field = &quot;ratio&quot;, var.threshold = 1, fdr.field = &quot;FDR&quot;, fdr.threshold = 0.05)
-
-del &lt;- rownames(sce)[rowData(sce)$blacklist == TRUE]
-
-hvg &lt;- setdiff(hvg, del)
-
-sel &lt;- rownames(dec) %in% hvg
-
-metadata(sce)$modelGeneCV2WithSpikes$hvg &lt;- sel</code></pre>
-<p>Plot expression of highly variable genes:</p>
-<pre class="r"><code>plotHeatmap(sce, hvg, center = TRUE, symmetric = TRUE, show_rownames = FALSE, show_colnames = FALSE)</code></pre>
-<p><img src="figure/03-feature-selection.Rmd/unnamed-chunk-23-1.png" width="672" style="display: block; margin: auto;" /></p>
-</div>
-<div id="modelgenevarbypoisson-1" class="section level3">
-<h3>modelGeneVarByPoisson</h3>
-<p>Identify highly variable genes:</p>
-<pre class="r"><code>dec &lt;- metadata(sce)$modelGeneVarByPoisson
-
-hvg &lt;- getTopHVGs(dec, var.field = &quot;bio&quot;, var.threshold = 0, fdr.field = &quot;FDR&quot;, fdr.threshold = 0.05)
-
-del &lt;- rownames(sce)[rowData(sce)$blacklist == TRUE]
-
-hvg &lt;- setdiff(hvg, del)
-
-sel &lt;- rownames(dec) %in% hvg
-
-metadata(sce)$modelGeneVarByPoisson$hvg &lt;- sel</code></pre>
-<p>Plot expression of highly variable genes:</p>
-<pre class="r"><code>plotHeatmap(sce, hvg, center = TRUE, symmetric = TRUE, show_rownames = FALSE, show_colnames = FALSE)</code></pre>
-<p><img src="figure/03-feature-selection.Rmd/unnamed-chunk-25-1.png" width="672" style="display: block; margin: auto;" /></p>
-</div>
-</div>
-<div id="comparison" class="section level2">
-<h2>Comparison</h2>
-<div id="euler" class="section level3">
-<h3>Euler</h3>
-<p>Compare number of features selected using an Euler diagram:</p>
-<pre class="r"><code>sel &lt;- cbind(
-  &quot;Features&quot; = TRUE,
-  &quot;Var&quot; = metadata(sce)$modelGeneVar$hvg,
-  &quot;CV2&quot; = metadata(sce)$modelGeneCV2$hvg,
-  &quot;VarWithSpikes&quot; = metadata(sce)$modelGeneVarWithSpikes$hvg,
-  &quot;CV2WithSpikes&quot; = metadata(sce)$modelGeneCV2WithSpikes$hvg,
-  &quot;VarByPoisson&quot; = metadata(sce)$modelGeneVarByPoisson$hvg
-)
-
-fit &lt;- euler(sel)
-
-pal &lt;- RColorBrewer::brewer.pal(n = 5, name = &quot;Pastel1&quot;)
-
-lab &lt;- comma(fit$original.values)
-
-plot(fit, fills = pal, quantities = lab)</code></pre>
-<p><img src="figure/03-feature-selection.Rmd/unnamed-chunk-26-1.png" width="672" style="display: block; margin: auto;" /></p>
-</div>
-<div id="jaccard" class="section level3">
-<h3>Jaccard</h3>
-<p>Calculate Jaccard index:</p>
-<pre class="r"><code>sel &lt;- rbind(
-  &quot;Var&quot; = metadata(sce)$modelGeneVar$hvg,
-  &quot;CV2&quot; = metadata(sce)$modelGeneCV2$hvg,
-  &quot;VarWithSpikes&quot; = metadata(sce)$modelGeneVarWithSpikes$hvg,
-  &quot;CV2WithSpikes&quot; = metadata(sce)$modelGeneCV2WithSpikes$hvg,
-  &quot;VarByPoisson&quot; = metadata(sce)$modelGeneVarByPoisson$hvg
-)
-
-dst &lt;- proxy::dist(sel, method = &quot;Jaccard&quot;, diag = TRUE, upper = TRUE)
-
-mat &lt;- as.matrix(dst)
-
-pal &lt;- RColorBrewer::brewer.pal(n = 5, name = &quot;Greens&quot;)
-
-col &lt;- colorRampPalette(pal)(10)
-
-brk &lt;- seq(0, 1, length.out = 11)
-
-pheatmap(mat, color = col, breaks = brk)</code></pre>
-<p><img src="figure/03-feature-selection.Rmd/unnamed-chunk-27-1.png" width="672" style="display: block; margin: auto;" /></p>
-</div>
-<div id="dimensionality-reduction" class="section level3 tabset">
-<h3 class="tabset">Dimensionality reduction</h3>
-<pre class="r"><code>dec &lt;- c(&quot;modelGeneVar&quot;, &quot;modelGeneCV2&quot;, &quot;modelGeneVarWithSpikes&quot;, &quot;modelGeneCV2WithSpikes&quot;, &quot;modelGeneVarByPoisson&quot;)</code></pre>
+sce$doublet_cluster &lt;- ifelse(sce$cluster %in% ids, TRUE, FALSE)</code></pre>
+<p>Inspect the distribution of doublet clusters on reduced dimensions:</p>
 <div id="pca" class="section level4">
 <h4>PCA</h4>
-<pre class="r"><code>plt &lt;- lapply(dec, function(x) {
-  
-  set.seed(1011101100)
-  
-  hvg &lt;- metadata(sce)[[x]]$hvg
-  
-  sce &lt;- runPCA(sce, subset_row = hvg, BSPARAM = ExactParam())
-
-  plotPCA(sce, colour_by = &quot;sum&quot;) + ggtitle(x)
-
-})
-
-patchwork::wrap_plots(plt, ncol = 2)</code></pre>
-<p><img src="figure/03-feature-selection.Rmd/unnamed-chunk-29-1.png" width="960" style="display: block; margin: auto;" /></p>
+<pre class="r"><code>plotPCA(sce, colour_by = &quot;cluster&quot;, shape_by = &quot;doublet_cluster&quot;)</code></pre>
+<p><img src="figure/06-doublet-detection.Rmd/unnamed-chunk-7-1.png" width="672" style="display: block; margin: auto;" /></p>
 </div>
 <div id="tsne" class="section level4">
 <h4>TSNE</h4>
-<pre class="r"><code>plt &lt;- lapply(dec, function(x) {
-  
-  set.seed(0101100110)
-  
-  hvg &lt;- metadata(sce)[[x]]$hvg
-  
-  sce &lt;- runPCA(sce, subset_row = hvg, BSPARAM = ExactParam())
-  
-  sce &lt;- runTSNE(sce, dimred = &quot;PCA&quot;)
-
-  plotTSNE(sce, colour_by = &quot;sum&quot;) + ggtitle(x)
-
-})
-
-patchwork::wrap_plots(plt, ncol = 2)</code></pre>
-<p><img src="figure/03-feature-selection.Rmd/unnamed-chunk-30-1.png" width="960" style="display: block; margin: auto;" /></p>
+<pre class="r"><code>plotTSNE(sce, colour_by = &quot;cluster&quot;, shape_by = &quot;doublet_cluster&quot;)</code></pre>
+<p><img src="figure/06-doublet-detection.Rmd/unnamed-chunk-8-1.png" width="672" style="display: block; margin: auto;" /></p>
 </div>
 <div id="umap" class="section level4">
 <h4>UMAP</h4>
-<pre class="r"><code>plt &lt;- lapply(dec, function(x) {
-  
-  set.seed(0001010011)
-  
-  hvg &lt;- metadata(sce)[[x]]$hvg
-  
-  sce &lt;- runPCA(sce, subset_row = hvg, BSPARAM = ExactParam())
-  
-  sce &lt;- runUMAP(sce, dimred = &quot;PCA&quot;)
-
-  plotUMAP(sce, colour_by = &quot;sum&quot;) + ggtitle(x)
-
-})
-
-patchwork::wrap_plots(plt, ncol = 2)</code></pre>
-<p><img src="figure/03-feature-selection.Rmd/unnamed-chunk-31-1.png" width="960" style="display: block; margin: auto;" /></p>
+<pre class="r"><code>plotUMAP(sce, colour_by = &quot;cluster&quot;, shape_by = &quot;doublet_cluster&quot;)</code></pre>
+<p><img src="figure/06-doublet-detection.Rmd/unnamed-chunk-9-1.png" width="672" style="display: block; margin: auto;" /></p>
 </div>
 </div>
+<div id="section" class="section level3 tabset">
+<h3 class="tabset"></h3>
+<p>Check for any doublet clusters:</p>
+<pre class="r"><code>run &lt;- any(sce$doublet_cluster)</code></pre>
+<p>Find significant marker genes between clusters:</p>
+<pre class="r"><code>res &lt;- findMarkers(sce, sce$cluster, direction = &quot;up&quot;)
+
+sig &lt;- lapply(res, subset, FDR &lt; 0.1)
+
+sig &lt;- Filter(nrow, sig)</code></pre>
+<p>Inspect the expression of marker genes across clusters:</p>
+<pre class="r"><code>for (i in ids) {
+  
+  dat &lt;- sig[[i]]
+  
+  dat &lt;- subset(dat, Top &lt;= 10)
+  
+  top &lt;- rownames(dat)
+  
+  cat(&quot;#### Cluster&quot;, i, &quot;\n&quot;)
+
+  plotHeatmap(sce, order_columns_by = &quot;cluster&quot;, features = top, center = TRUE, symmetric = TRUE)
+
+  cat(&quot;\n\n&quot;)
+
+}</code></pre>
 </div>
-<div id="selection" class="section level2">
-<h2>Selection</h2>
-<p>Select highly variable genes and store in row metadata:</p>
-<pre class="r"><code>dec &lt;- metadata(sce)$modelGeneVar
+<div id="by-cell" class="section level3 tabset">
+<h3 class="tabset">By cell</h3>
+<p>Identify potential doublet cells based on simulations of putative doublet expression profiles:</p>
+<pre class="r"><code>set.seed(1001110010)
 
-dec &lt;- subset(dec, hvg == TRUE)
+hvg &lt;- rowData(sce)$selected
 
-sel &lt;- rownames(sce) %in% rownames(dec)
+dim &lt;- ncol(reducedDim(sce))
 
-rowData(sce)$selected &lt;- sel</code></pre>
+dbl &lt;- computeDoubletDensity(sce, subset.row = hvg, d = dim)
+
+sce$doublet_score &lt;- dbl</code></pre>
+<p>Inspect the distribution of doublet scores on reduced dimensions:</p>
+<div id="pca-1" class="section level4">
+<h4>PCA</h4>
+<pre class="r"><code>plotPCA(sce, colour_by = &quot;doublet_score&quot;)</code></pre>
+<p><img src="figure/06-doublet-detection.Rmd/unnamed-chunk-14-1.png" width="672" style="display: block; margin: auto;" /></p>
+</div>
+<div id="tsne-1" class="section level4">
+<h4>TSNE</h4>
+<pre class="r"><code>plotTSNE(sce, colour_by = &quot;doublet_score&quot;)</code></pre>
+<p><img src="figure/06-doublet-detection.Rmd/unnamed-chunk-15-1.png" width="672" style="display: block; margin: auto;" /></p>
+</div>
+<div id="umap-1" class="section level4">
+<h4>UMAP</h4>
+<pre class="r"><code>plotUMAP(sce, colour_by = &quot;doublet_score&quot;)</code></pre>
+<p><img src="figure/06-doublet-detection.Rmd/unnamed-chunk-16-1.png" width="672" style="display: block; margin: auto;" /></p>
+</div>
+</div>
 </div>
 <div id="summary" class="section level2">
 <h2>Summary</h2>
 <div id="output" class="section level3">
 <h3>Output</h3>
 <p>Save experiment object to disk:</p>
-<pre class="r"><code>saveRDS(sce, &quot;output/03-feature-selection.rds&quot;)</code></pre>
+<pre class="r"><code>saveRDS(sce, file = &quot;output/06-doublet-detection.rds&quot; )</code></pre>
 </div>
 <div id="session" class="section level3">
 <h3>Session</h3>
@@ -1020,69 +749,59 @@ attached base packages:
 [8] methods   base     
 
 other attached packages:
- [1] scales_1.1.1                pheatmap_1.0.12            
- [3] eulerr_6.1.0                msigdbr_7.4.1              
- [5] scran_1.18.7                scater_1.18.6              
- [7] ggplot2_3.3.4               SingleCellExperiment_1.12.0
- [9] SummarizedExperiment_1.20.0 GenomicRanges_1.42.0       
-[11] GenomeInfoDb_1.26.7         MatrixGenerics_1.2.1       
-[13] matrixStats_0.59.0          org.Mm.eg.db_3.12.0        
-[15] AnnotationDbi_1.52.0        IRanges_2.24.1             
-[17] S4Vectors_0.28.1            Biobase_2.50.0             
-[19] BiocGenerics_0.36.1         BiocSingular_1.6.0         
-[21] workflowr_1.6.2            
+ [1] scDblFinder_1.4.0           scran_1.18.7               
+ [3] scater_1.18.6               ggplot2_3.3.4              
+ [5] SingleCellExperiment_1.12.0 SummarizedExperiment_1.20.0
+ [7] Biobase_2.50.0              GenomicRanges_1.42.0       
+ [9] GenomeInfoDb_1.26.7         IRanges_2.24.1             
+[11] S4Vectors_0.28.1            BiocGenerics_0.36.1        
+[13] MatrixGenerics_1.2.1        matrixStats_0.59.0         
+[15] workflowr_1.6.2            
 
 loaded via a namespace (and not attached):
- [1] Rtsne_0.15                ggbeeswarm_0.6.0         
- [3] colorspace_2.0-1          ellipsis_0.3.2           
- [5] rprojroot_2.0.2           scuttle_1.0.4            
- [7] bluster_1.0.0             XVector_0.30.0           
- [9] BiocNeighbors_1.8.2       fs_1.5.0                 
-[11] proxy_0.4-26              farver_2.1.0             
-[13] bit64_4.0.5               RSpectra_0.16-0          
-[15] fansi_0.5.0               codetools_0.2-18         
-[17] sparseMatrixStats_1.2.1   cachem_1.0.5             
-[19] knitr_1.33                polyclip_1.10-0          
-[21] jsonlite_1.7.2            uwot_0.1.10              
-[23] compiler_4.0.2            dqrng_0.3.0              
-[25] assertthat_0.2.1          Matrix_1.3-4             
-[27] fastmap_1.1.0             limma_3.46.0             
-[29] later_1.2.0               htmltools_0.5.1.1        
-[31] tools_4.0.2               rsvd_1.0.5               
-[33] igraph_1.2.6              gtable_0.3.0             
-[35] glue_1.4.2                GenomeInfoDbData_1.2.4   
-[37] dplyr_1.0.7               Rcpp_1.0.6               
-[39] jquerylib_0.1.4           vctrs_0.3.8              
-[41] babelgene_21.4            DelayedMatrixStats_1.12.3
-[43] xfun_0.24                 polylabelr_0.2.0         
-[45] stringr_1.4.0             beachmat_2.6.4           
-[47] lifecycle_1.0.0           irlba_2.3.3              
-[49] renv_0.13.2               statmod_1.4.36           
-[51] edgeR_3.32.1              zlibbioc_1.36.0          
-[53] promises_1.2.0.1          RColorBrewer_1.1-2       
-[55] yaml_2.2.1                memoise_2.0.0            
-[57] gridExtra_2.3             sass_0.4.0               
-[59] stringi_1.6.2             RSQLite_2.2.7            
-[61] highr_0.9                 BiocParallel_1.24.1      
-[63] rlang_0.4.11              pkgconfig_2.0.3          
-[65] bitops_1.0-7              evaluate_0.14            
-[67] lattice_0.20-44           purrr_0.3.4              
-[69] patchwork_1.1.1           labeling_0.4.2           
-[71] cowplot_1.1.1             bit_4.0.4                
-[73] tidyselect_1.1.1          magrittr_2.0.1           
-[75] R6_2.5.0                  generics_0.1.0           
-[77] DelayedArray_0.16.3       DBI_1.1.1                
-[79] pillar_1.6.1              whisker_0.4              
-[81] withr_2.4.2               RCurl_1.98-1.3           
-[83] tibble_3.1.2              crayon_1.4.1             
-[85] utf8_1.2.1                rmarkdown_2.9            
-[87] viridis_0.6.1             locfit_1.5-9.4           
-[89] grid_4.0.2                FNN_1.1.3                
-[91] blob_1.2.1                git2r_0.28.0             
-[93] digest_0.6.27             httpuv_1.6.1             
-[95] munsell_0.5.0             beeswarm_0.4.0           
-[97] viridisLite_0.4.0         vipor_0.4.5              
-[99] bslib_0.2.5.1            </code></pre>
+ [1] bitops_1.0-7              fs_1.5.0                 
+ [3] rprojroot_2.0.2           tools_4.0.2              
+ [5] bslib_0.2.5.1             utf8_1.2.1               
+ [7] R6_2.5.0                  irlba_2.3.3              
+ [9] vipor_0.4.5               DBI_1.1.1                
+[11] colorspace_2.0-1          withr_2.4.2              
+[13] tidyselect_1.1.1          gridExtra_2.3            
+[15] compiler_4.0.2            git2r_0.28.0             
+[17] BiocNeighbors_1.8.2       DelayedArray_0.16.3      
+[19] labeling_0.4.2            sass_0.4.0               
+[21] scales_1.1.1              stringr_1.4.0            
+[23] digest_0.6.27             rmarkdown_2.9            
+[25] XVector_0.30.0            pkgconfig_2.0.3          
+[27] htmltools_0.5.1.1         sparseMatrixStats_1.2.1  
+[29] highr_0.9                 limma_3.46.0             
+[31] rlang_0.4.11              DelayedMatrixStats_1.12.3
+[33] farver_2.1.0              jquerylib_0.1.4          
+[35] generics_0.1.0            jsonlite_1.7.2           
+[37] BiocParallel_1.24.1       dplyr_1.0.7              
+[39] RCurl_1.98-1.3            magrittr_2.0.1           
+[41] BiocSingular_1.6.0        GenomeInfoDbData_1.2.4   
+[43] scuttle_1.0.4             Matrix_1.3-4             
+[45] Rcpp_1.0.6                ggbeeswarm_0.6.0         
+[47] munsell_0.5.0             fansi_0.5.0              
+[49] viridis_0.6.1             lifecycle_1.0.0          
+[51] stringi_1.6.2             whisker_0.4              
+[53] yaml_2.2.1                edgeR_3.32.1             
+[55] zlibbioc_1.36.0           grid_4.0.2               
+[57] promises_1.2.0.1          dqrng_0.3.0              
+[59] crayon_1.4.1              lattice_0.20-44          
+[61] cowplot_1.1.1             beachmat_2.6.4           
+[63] locfit_1.5-9.4            knitr_1.33               
+[65] pillar_1.6.1              igraph_1.2.6             
+[67] xgboost_1.4.1.1           codetools_0.2-18         
+[69] glue_1.4.2                evaluate_0.14            
+[71] data.table_1.14.0         renv_0.13.2              
+[73] vctrs_0.3.8               httpuv_1.6.1             
+[75] gtable_0.3.0              purrr_0.3.4              
+[77] assertthat_0.2.1          xfun_0.24                
+[79] rsvd_1.0.5                later_1.2.0              
+[81] viridisLite_0.4.0         tibble_3.1.2             
+[83] beeswarm_0.4.0            bluster_1.0.0            
+[85] statmod_1.4.36            ellipsis_0.3.2           </code></pre>
 </div>
 </div>
 
