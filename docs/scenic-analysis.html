@@ -12,7 +12,7 @@
 <meta name="author" content="James Ashmore" />
 
 
-<title>Cell type annotation</title>
+<title>SCENIC analysis</title>
 
 <script src="site_libs/header-attrs-2.9/header-attrs.js"></script>
 <script src="site_libs/jquery-1.11.3/jquery.min.js"></script>
@@ -412,7 +412,7 @@ div.tocify {
 
 
 
-<h1 class="title toc-ignore">Cell type annotation</h1>
+<h1 class="title toc-ignore">SCENIC analysis</h1>
 <h4 class="author">James Ashmore</h4>
 <h4 class="date">09 August, 2021</h4>
 
@@ -573,7 +573,7 @@ Note that any generated files, e.g. HTML, png, CSS, etc., are not included in t
 <div id="versions" class="tab-pane fade">
 
 <p>
-These are the previous versions of the repository in which changes were made to the R Markdown (<code>analysis/09-cell-annotation.Rmd</code>) and HTML (<code>docs/09-cell-annotation.html</code>) files. If you’ve configured a remote Git repository (see <code>?wflow_git_remote</code>), click on the hyperlinks in the table below to view the files as they were in that past version.
+These are the previous versions of the repository in which changes were made to the R Markdown (<code>analysis/scenic-analysis.Rmd</code>) and HTML (<code>docs/scenic-analysis.html</code>) files. If you’ve configured a remote Git repository (see <code>?wflow_git_remote</code>), click on the hyperlinks in the table below to view the files as they were in that past version.
 </p>
 <div class="table-responsive">
 <table class="table table-condensed table-hover">
@@ -599,50 +599,16 @@ Message
 <tbody>
 <tr>
 <td>
-html
-</td>
-<td>
-<a href="https://rawcdn.githack.com/jma1991/HT_KDR_MIX_C/14037639a77031c712bf03cf1407cd9ddc79298a/docs/09-cell-annotation.html" target="_blank">1403763</a>
-</td>
-<td>
-James Ashmore
-</td>
-<td>
-2021-07-30
-</td>
-<td>
-Build
-</td>
-</tr>
-<tr>
-<td>
-html
-</td>
-<td>
-<a href="https://rawcdn.githack.com/jma1991/HT_KDR_MIX_C/5a5f7c006f656b4146ea4488d4190e266bdbb69e/docs/09-cell-annotation.html" target="_blank">5a5f7c0</a>
-</td>
-<td>
-James Ashmore
-</td>
-<td>
-2021-07-21
-</td>
-<td>
-Build
-</td>
-</tr>
-<tr>
-<td>
 Rmd
 </td>
 <td>
-<a href="https://github.com/jma1991/HT_KDR_MIX_C/blob/8c74cdeeb25461240d26019844edc945fc483df7/analysis/09-cell-annotation.Rmd" target="_blank">8c74cde</a>
+<a href="https://github.com/jma1991/HT_KDR_MIX_C/blob/398cd20c1ac011c27c401c00c6871503c7f0bf35/analysis/scenic-analysis.Rmd" target="_blank">398cd20</a>
 </td>
 <td>
 James Ashmore
 </td>
 <td>
-2021-07-21
+2021-08-09
 </td>
 <td>
 Build
@@ -657,7 +623,7 @@ Build
 </div>
 <div id="introduction" class="section level2">
 <h2>Introduction</h2>
-<p>In this analysis we are going to annotate previously defined clusters with a cell type label. This process can be done manually using a domain expert’s knowledge or automatically based on known markers and reference data.</p>
+<p>In this document we are going to analyse the output from the pySCENIC command-line software. SCENIC is a tool for single-cell regulatory network inference and clustering.</p>
 </div>
 <div id="setup" class="section level2">
 <h2>Setup</h2>
@@ -665,8 +631,7 @@ Build
 <pre class="r"><code>knitr::opts_chunk$set(
   autodep    = TRUE,
   cache      = TRUE,
-  cache.lazy = FALSE,
-  cache.path = &quot;cache/09-cell-annotation.Rmd/&quot;,
+  cache.path = &quot;cache/scenic-analysis.Rmd/&quot;,
   dev        = &quot;png&quot;,
   error      = FALSE,
   message    = FALSE,
@@ -675,106 +640,89 @@ Build
   out.width = &#39;100%&#39;
 )</code></pre>
 <p>Load Bioconductor packages:</p>
-<pre class="r"><code>library(scran)
-library(scater)
-library(AUCell)
-library(GSEABase)
-library(SingleR)</code></pre>
+<pre class="r"><code>library(scuttle)</code></pre>
 <p>Load CRAN packages:</p>
-<pre class="r"><code>library(patchwork)
-library(pheatmap)</code></pre>
-<p>Source custom functions:</p>
-<pre class="r"><code>source(&quot;code/cleanEmbryoAtlasData.R&quot;)</code></pre>
-<p>Import experiment data:</p>
-<pre class="r"><code>sce &lt;- readRDS(&quot;output/08-marker-detection.rds&quot;)</code></pre>
+<pre class="r"><code>library(hues)
+library(pheatmap)
+library(viridis)</code></pre>
+<p>Define function to import AUCell matrix from text format:</p>
+<pre class="r"><code>importAUCfromText &lt;- function(fileName, rows=&quot;regulons&quot;, columns=&quot;cells&quot;, transpose=TRUE, newNames=NULL) {
+  aucMatrix &lt;- data.table::fread(fileName, drop=1)
+  cellNames &lt;- unname(unlist(data.table::fread(fileName, select=1, skip=1)))
+  if(transpose) aucMatrix &lt;- t(as.matrix(aucMatrix))
+  colnames(aucMatrix) &lt;- cellNames
+  if(!is.null(newNames)) rownames(aucMatrix) &lt;- unname(newNames[rownames(aucMatrix)])
+  names(dimnames(aucMatrix)) &lt;- c(rows, columns)
+  return(aucMatrix)
+}</code></pre>
 </div>
-<div id="annotation" class="section level2">
-<h2>Annotation</h2>
-<div id="gene-sets" class="section level3">
-<h3>Gene sets</h3>
-<p>Read gene sets from disk and check they are present in the data:</p>
-<pre class="r"><code>all &lt;- read.csv(&quot;data/markers.csv&quot;, stringsAsFactors = FALSE)
+<div id="results" class="section level2">
+<h2>Results</h2>
+<p>Read experiment object:</p>
+<pre class="r"><code>sce &lt;- readRDS(&quot;output/09-cell-annotation.rds&quot;)</code></pre>
+<p>Make cell names unique:</p>
+<pre class="r"><code>N &lt;- ncol(sce)
 
-all &lt;- all[all$gene_id %in% rowData(sce)$gene_id, ]</code></pre>
-<p>Format gene sets for entry into the AUCell package:</p>
-<pre class="r"><code>all &lt;- split(all, all$gene_set)
+colnames(sce) &lt;- seq_len(N)</code></pre>
+<p>Import activity matrix:</p>
+<pre class="r"><code>auc &lt;- importAUCfromText(&quot;output/pyscenic/aucell.csv&quot;)</code></pre>
+<p>Rename experiment cells:</p>
+<pre class="r"><code>colnames(auc) &lt;- colnames(sce)</code></pre>
+<p>Order activity matrix by cluster:</p>
+<pre class="r"><code>auc &lt;- auc[, order(sce$cluster)]</code></pre>
+<p>Create heatmap colour palette:</p>
+<pre class="r"><code>phenotype.palette &lt;- c(&quot;HET&quot; = &quot;#BAB0AC&quot;, &quot;HOM&quot; = &quot;#E15759&quot;)
 
-all &lt;- lapply(all, function(x) GeneSet(x$gene_id, setName = unique(x$gene_set)))
+cluster.palette &lt;- iwanthue(n = nlevels(sce$cluster))
 
-all &lt;- GeneSetCollection(all)</code></pre>
-<p>Use the AUCell package to identify gene sets that are highly expressed in each cell:</p>
-<pre class="r"><code>mat &lt;- counts(sce)
+cluster.palette &lt;- setNames(cluster.palette, levels(sce$cluster))
 
-rownames(mat) &lt;- rowData(sce)$gene_id
+celltype.palette &lt;- MouseGastrulationData::EmbryoCelltypeColours
 
-fit &lt;- AUCell_buildRankings(mat, plotStats = FALSE, verbose = FALSE)
-
-auc &lt;- AUCell_calcAUC(all, fit)</code></pre>
-<p>Get assignments from AUCell scores:</p>
-<pre class="r"><code>res &lt;- t(assay(auc))
-
-lab &lt;- colnames(res)[max.col(res)]</code></pre>
-<p>Store AUCell assignments in experiment data:</p>
-<pre class="r"><code>sce$celltype_aucell &lt;- lab</code></pre>
-<p>Create results table for use with SingleR functions:</p>
-<pre class="r"><code>dat &lt;- DataFrame(scores = I(res), labels = lab, pruned.labels = lab, row.names = rownames(res))</code></pre>
-<p>Create a heatmap of the AUCell assignment scores:</p>
-<pre class="r"><code>plotScoreHeatmap(dat, clusters = sce$cluster,  fontsize = 8)</code></pre>
-<p><img src="figure/09-cell-annotation.Rmd/unnamed-chunk-12-1.png" width="100%" style="display: block; margin: auto;" /></p>
-<p>Plot score distributions of labels:</p>
-<pre class="r"><code>plotScoreDistribution(dat, show = &quot;delta.med&quot;, ncol = 3, show.nmads = 3)</code></pre>
-<p><img src="figure/09-cell-annotation.Rmd/unnamed-chunk-13-1.png" width="100%" style="display: block; margin: auto;" /></p>
-</div>
-<div id="reference-data" class="section level3">
-<h3>Reference data</h3>
-<p>Load the mouse gastrulation data package:</p>
-<pre class="r"><code>library(MouseGastrulationData)</code></pre>
-<p>Subset atlas sample metadata by embryonic stage:</p>
-<pre class="r"><code>AtlasSampleMetadata &lt;- subset(AtlasSampleMetadata, stage == &quot;E8.25&quot;)</code></pre>
-<p>Retrieve processed samples from embryo atlas data:</p>
-<pre class="r"><code>ref &lt;- EmbryoAtlasData(type = &quot;processed&quot;, samples = AtlasSampleMetadata$sample)</code></pre>
-<p>Clean processed samples from embryo atlas data:</p>
-<pre class="r"><code>ref &lt;- cleanEmbryoAtlasData(ref)</code></pre>
-<p>Identify marker genes for each cell type whilst blocking on sample:</p>
-<pre class="r"><code>res &lt;- pairwiseWilcox(logcounts(ref), groups = ref$celltype, block = ref$sample)
-
-sig &lt;- getTopMarkers(res$statistics, res$pairs)</code></pre>
-<p>Aggregate references within each celltype and sample combination:</p>
-<pre class="r"><code>lab &lt;- paste(ref$celltype, ref$sample, sep = &quot;-&quot;)
-
-ref &lt;- aggregateReference(ref, labels = lab)</code></pre>
-<p>Remove sample label from aggregated reference names:</p>
-<pre class="r"><code>lab &lt;- sapply(strsplit(colnames(ref), &quot;-&quot;), &#39;[&#39;, 1)</code></pre>
-<p>Return the best annotation for each cell in the test dataset:</p>
-<pre class="r"><code>ids &lt;- rownames(sce) # save original feature names
-
-rownames(sce) &lt;- rowData(sce)$gene_id # make feature names compatible
-
-fit &lt;- SingleR(sce, ref, labels = lab, genes = sig)
-
-rownames(sce) &lt;- ids # return original feature names</code></pre>
-<p>Store SingleR assignments in experiment data:</p>
-<pre class="r"><code>sce$celltype_singler &lt;- fit$labels</code></pre>
-<p>Create a heatmap of the average SingleR assignment scores:</p>
-<pre class="r"><code>plotScoreHeatmap(fit, clusters = sce$cluster, fontsize = 8)</code></pre>
-<p><img src="figure/09-cell-annotation.Rmd/unnamed-chunk-23-1.png" width="100%" style="display: block; margin: auto;" /></p>
-<p>Plot score distributions of labels:</p>
-<pre class="r"><code>plotScoreDistribution(fit, show = &quot;delta.med&quot;, ncol = 3, show.nmads = 3)</code></pre>
-<p><img src="figure/09-cell-annotation.Rmd/unnamed-chunk-24-1.png" width="100%" style="display: block; margin: auto;" /></p>
-</div>
-</div>
-<div id="selection" class="section level2">
-<h2>Selection</h2>
-<p>Choose cell type annotation method for downstream analysis:</p>
-<pre class="r"><code>sce$celltype &lt;- sce$celltype_singler</code></pre>
+celltype.palette &lt;- subset(celltype.palette, names(celltype.palette) %in% sce$celltype)</code></pre>
+<p>Create heatmap annotation:</p>
+<pre class="r"><code>ann &lt;- list(
+  annotation_col = data.frame(
+    Cluster = sce$cluster, 
+    Celltype = sce$celltype, 
+    Phenotype = sce$phenotype, 
+    row.names = colnames(sce)
+  ),
+  annotation_colors = list(
+    Cluster = cluster.palette, 
+    Celltype = celltype.palette, 
+    Phenotype = phenotype.palette
+  )
+)</code></pre>
+<p>Plot matrix of AUC values for all regulons:</p>
+<pre class="r"><code>pheatmap(
+  mat = auc,
+  color = viridis(100),
+  cluster_cols = FALSE,
+  annotation_col = ann$annotation_col,
+  annotation_colors = ann$annotation_colors,
+  border_color = NA,
+  show_rownames = FALSE,
+  show_colnames = FALSE,
+)</code></pre>
+<p><img src="figure/scenic-analysis.Rmd/unnamed-chunk-12-1.png" width="100%" style="display: block; margin: auto;" /></p>
+<p>Identify most variable regulons:</p>
+<pre class="r"><code>idx &lt;- order(rowVars(auc), decreasing = TRUE)[1:30]</code></pre>
+<p>Plot matrix of AUC values for outlier regulons:</p>
+<pre class="r"><code>pheatmap(
+  mat = auc[idx, ],
+  color = viridis(100),
+  cluster_cols = FALSE,
+  annotation_col = ann$annotation_col,
+  annotation_colors = ann$annotation_colors,
+  border_color = NA,
+  show_rownames = TRUE,
+  show_colnames = FALSE,
+)</code></pre>
+<p><img src="figure/scenic-analysis.Rmd/unnamed-chunk-14-1.png" width="100%" style="display: block; margin: auto;" /></p>
 </div>
 <div id="summary" class="section level2">
 <h2>Summary</h2>
-<div id="output" class="section level3">
-<h3>Output</h3>
-<p>Save experiment object to disk:</p>
-<pre class="r"><code>saveRDS(sce, file = &quot;output/09-cell-annotation.rds&quot;)</code></pre>
-</div>
 <div id="session" class="section level3">
 <h3>Session</h3>
 <p>Print session information:</p>
@@ -795,74 +743,67 @@ attached base packages:
 [8] methods   base     
 
 other attached packages:
- [1] MouseGastrulationData_1.4.0 pheatmap_1.0.12            
- [3] patchwork_1.1.1             SingleR_1.4.1              
- [5] GSEABase_1.52.1             graph_1.68.0               
- [7] annotate_1.68.0             XML_3.99-0.6               
- [9] AnnotationDbi_1.52.0        AUCell_1.12.0              
-[11] scater_1.18.6               ggplot2_3.3.4              
-[13] scran_1.18.7                SingleCellExperiment_1.12.0
-[15] SummarizedExperiment_1.20.0 Biobase_2.50.0             
-[17] GenomicRanges_1.42.0        GenomeInfoDb_1.26.7        
-[19] IRanges_2.24.1              S4Vectors_0.28.1           
-[21] BiocGenerics_0.36.1         MatrixGenerics_1.2.1       
-[23] matrixStats_0.59.0          workflowr_1.6.2            
+ [1] viridis_0.6.1               viridisLite_0.4.0          
+ [3] pheatmap_1.0.12             hues_0.2.0                 
+ [5] scuttle_1.0.4               SingleCellExperiment_1.12.0
+ [7] SummarizedExperiment_1.20.0 Biobase_2.50.0             
+ [9] GenomicRanges_1.42.0        GenomeInfoDb_1.26.7        
+[11] IRanges_2.24.1              S4Vectors_0.28.1           
+[13] BiocGenerics_0.36.1         MatrixGenerics_1.2.1       
+[15] matrixStats_0.59.0          workflowr_1.6.2            
 
 loaded via a namespace (and not attached):
-  [1] ggbeeswarm_0.6.0              colorspace_2.0-1             
-  [3] ellipsis_0.3.2                rprojroot_2.0.2              
-  [5] scuttle_1.0.4                 bluster_1.0.0                
-  [7] XVector_0.30.0                BiocNeighbors_1.8.2          
-  [9] fs_1.5.0                      farver_2.1.0                 
- [11] bit64_4.0.5                   interactiveDisplayBase_1.28.0
- [13] fansi_0.5.0                   codetools_0.2-18             
- [15] R.methodsS3_1.8.1             sparseMatrixStats_1.2.1      
- [17] cachem_1.0.5                  knitr_1.33                   
- [19] jsonlite_1.7.2                dbplyr_2.1.1                 
- [21] R.oo_1.24.0                   shiny_1.6.0                  
- [23] BiocManager_1.30.16           compiler_4.0.2               
- [25] httr_1.4.2                    dqrng_0.3.0                  
- [27] assertthat_0.2.1              Matrix_1.3-4                 
- [29] fastmap_1.1.0                 limma_3.46.0                 
- [31] later_1.2.0                   BiocSingular_1.6.0           
- [33] htmltools_0.5.1.1             tools_4.0.2                  
- [35] rsvd_1.0.5                    igraph_1.2.6                 
- [37] gtable_0.3.0                  glue_1.4.2                   
- [39] GenomeInfoDbData_1.2.4        dplyr_1.0.7                  
- [41] rappdirs_0.3.3                Rcpp_1.0.6                   
- [43] jquerylib_0.1.4               vctrs_0.3.8                  
- [45] ExperimentHub_1.16.1          DelayedMatrixStats_1.12.3    
- [47] xfun_0.24                     stringr_1.4.0                
- [49] beachmat_2.6.4                mime_0.10                    
- [51] lifecycle_1.0.0               irlba_2.3.3                  
- [53] renv_0.13.2                   statmod_1.4.36               
- [55] AnnotationHub_2.22.1          edgeR_3.32.1                 
- [57] zlibbioc_1.36.0               scales_1.1.1                 
- [59] promises_1.2.0.1              RColorBrewer_1.1-2           
- [61] curl_4.3.1                    yaml_2.2.1                   
- [63] memoise_2.0.0                 gridExtra_2.3                
- [65] sass_0.4.0                    stringi_1.6.2                
- [67] RSQLite_2.2.7                 BiocVersion_3.12.0           
- [69] highr_0.9                     BiocParallel_1.24.1          
+  [1] colorspace_2.0-1              ellipsis_0.3.2               
+  [3] rprojroot_2.0.2               bluster_1.0.0                
+  [5] XVector_0.30.0                BiocNeighbors_1.8.2          
+  [7] fs_1.5.0                      farver_2.1.0                 
+  [9] bit64_4.0.5                   AnnotationDbi_1.52.0         
+ [11] interactiveDisplayBase_1.28.0 fansi_0.5.0                  
+ [13] codetools_0.2-18              sparseMatrixStats_1.2.1      
+ [15] cachem_1.0.5                  knitr_1.33                   
+ [17] jsonlite_1.7.2                dbplyr_2.1.1                 
+ [19] shiny_1.6.0                   BiocManager_1.30.16          
+ [21] compiler_4.0.2                httr_1.4.2                   
+ [23] dqrng_0.3.0                   assertthat_0.2.1             
+ [25] Matrix_1.3-4                  fastmap_1.1.0                
+ [27] limma_3.46.0                  later_1.2.0                  
+ [29] BiocSingular_1.6.0            htmltools_0.5.1.1            
+ [31] tools_4.0.2                   rsvd_1.0.5                   
+ [33] igraph_1.2.6                  gtable_0.3.0                 
+ [35] glue_1.4.2                    GenomeInfoDbData_1.2.4       
+ [37] dplyr_1.0.7                   rappdirs_0.3.3               
+ [39] Rcpp_1.0.6                    MouseGastrulationData_1.4.0  
+ [41] jquerylib_0.1.4               vctrs_0.3.8                  
+ [43] ExperimentHub_1.16.1          DelayedMatrixStats_1.12.3    
+ [45] xfun_0.24                     stringr_1.4.0                
+ [47] beachmat_2.6.4                mime_0.10                    
+ [49] lifecycle_1.0.0               irlba_2.3.3                  
+ [51] renv_0.13.2                   statmod_1.4.36               
+ [53] AnnotationHub_2.22.1          edgeR_3.32.1                 
+ [55] zlibbioc_1.36.0               scales_1.1.1                 
+ [57] promises_1.2.0.1              RColorBrewer_1.1-2           
+ [59] yaml_2.2.1                    curl_4.3.1                   
+ [61] memoise_2.0.0                 gridExtra_2.3                
+ [63] ggplot2_3.3.4                 sass_0.4.0                   
+ [65] stringi_1.6.2                 RSQLite_2.2.7                
+ [67] highr_0.9                     BiocVersion_3.12.0           
+ [69] scran_1.18.7                  BiocParallel_1.24.1          
  [71] rlang_0.4.11                  pkgconfig_2.0.3              
  [73] bitops_1.0-7                  evaluate_0.14                
  [75] lattice_0.20-44               purrr_0.3.4                  
- [77] labeling_0.4.2                bit_4.0.4                    
- [79] tidyselect_1.1.1              magrittr_2.0.1               
- [81] R6_2.5.0                      generics_0.1.0               
- [83] DelayedArray_0.16.3           DBI_1.1.1                    
- [85] pillar_1.6.1                  whisker_0.4                  
- [87] withr_2.4.2                   RCurl_1.98-1.3               
- [89] tibble_3.1.2                  crayon_1.4.1                 
- [91] utf8_1.2.1                    BiocFileCache_1.14.0         
- [93] rmarkdown_2.9                 viridis_0.6.1                
- [95] locfit_1.5-9.4                grid_4.0.2                   
- [97] data.table_1.14.0             blob_1.2.1                   
- [99] git2r_0.28.0                  digest_0.6.27                
-[101] xtable_1.8-4                  httpuv_1.6.1                 
-[103] R.utils_2.10.1                munsell_0.5.0                
-[105] beeswarm_0.4.0                viridisLite_0.4.0            
-[107] vipor_0.4.5                   bslib_0.2.5.1                </code></pre>
+ [77] bit_4.0.4                     tidyselect_1.1.1             
+ [79] magrittr_2.0.1                R6_2.5.0                     
+ [81] generics_0.1.0                DelayedArray_0.16.3          
+ [83] DBI_1.1.1                     pillar_1.6.1                 
+ [85] whisker_0.4                   RCurl_1.98-1.3               
+ [87] tibble_3.1.2                  crayon_1.4.1                 
+ [89] utf8_1.2.1                    BiocFileCache_1.14.0         
+ [91] rmarkdown_2.9                 locfit_1.5-9.4               
+ [93] grid_4.0.2                    data.table_1.14.0            
+ [95] blob_1.2.1                    git2r_0.28.0                 
+ [97] digest_0.6.27                 xtable_1.8-4                 
+ [99] httpuv_1.6.1                  munsell_0.5.0                
+[101] bslib_0.2.5.1                </code></pre>
 </div>
 </div>
 
